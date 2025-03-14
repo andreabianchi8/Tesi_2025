@@ -94,28 +94,31 @@ def run_Benchmark(dataset,benchmark,startnum):
     # Estrarre dati dal file Excel
     # dataframe = ExtractDataExcel(file_path)
 
-    dataframe_temp = dataset
+    dataframe = dataset
 
     original_prompt="You will be shown an image, you will have to answer the question related to the image."
 
     # image_url="https://img.freepik.com/free-photo/abstract-surface-textures-white-concrete-stone-wall_74190-8189.jpg" #Blank image
-    i=1
-    for index, row in dataframe_temp.iterrows():
-        image_url = "./images/image{}.jpg".format(i)
-        input_text = row['question']
-        i=i+1
+    index=0
+    for key, value in dataframe.items():
+        if "inductive" in value['skill'] or "numerical" in value['skill']:
+            image_url="./images/{}".format(value['imagename'])
+            input_text = value['question']
+            ground_truth=value['answer']
+            reasoning=value['reasoning']
+        
+        
+            # Ottimizzazione del prompt
+            optimized_prompt = prompt_optimization(original_prompt, input_text)
+            optimized_prompt_ExP_CoT=prompt_optimization_ExP_CoT(original_prompt,input_text)
 
-        # Ottimizzazione del prompt
-        optimized_prompt = prompt_optimization(original_prompt, input_text)
-        optimized_prompt_ExP_CoT=prompt_optimization_ExP_CoT(original_prompt,input_text)
+            # Generare risposte per il prompt originale e quello ottimizzato
+            answer_original, messages_original = generate_response(original_prompt+input_text,image_url)
+            answer_optimized, messages_optimized = generate_response(optimized_prompt,image_url)
+            answer_optimized_Exp_CoT,messages_optimized_Exp_CoT= generate_response(optimized_prompt_ExP_CoT,image_url)
 
-        # Generare risposte per il prompt originale e quello ottimizzato
-        answer_original, messages_original = generate_response(pipe,original_prompt+input_text,image_url)
-        answer_optimized, messages_optimized = generate_response(pipe, optimized_prompt,image_url)
-        answer_optimized_Exp_CoT,messages_optimized_Exp_CoT= generate_response(pipe,optimized_prompt_ExP_CoT,image_url)
-
-        # Accumulare i risultati in un dizionario
-        result = {
+            # Accumulare i risultati in un dizionario
+            result = {
             "original_prompt": original_prompt,
             "optimized_prompt": optimized_prompt,
             "optimized_prompt_ExP_CoT": optimized_prompt_ExP_CoT,
@@ -125,15 +128,18 @@ def run_Benchmark(dataset,benchmark,startnum):
             "answer_optimized": answer_optimized,
             "original_messages": messages_original,
             "optimized_messages": messages_optimized,
+            'ground_truth': ground_truth,
+            'reasoning':reasoning,
             "image":image_url
-        }
-        results.append(result)
+            }
+            results.append(result)
         
-        print(f'Processed prompt {index + 1}/{len(dataframe_temp)}')
+            print(f'Processed prompt {index + 1}/{len(dataframe)}')
+            index=index+1
 
     # Scrivere i risultati nel file JSON
-    with open(output_file, 'w',newline='', encoding='utf-8') as csvfile:
-        fieldnames=['original_prompt','optimized_prompt','optimized_prompt_ExP_CoT','answer_optimized_Exp_CoT','messages_optimized_Exp_CoT','answer_original','answer_optimized','original_messages','optimized_messages','image']
+    with open(output_file, 'w',newline='') as csvfile:
+        fieldnames=['original_prompt','optimized_prompt','optimized_prompt_ExP_CoT','answer_optimized_Exp_CoT','messages_optimized_Exp_CoT','answer_original','answer_optimized','original_messages','optimized_messages','ground_truth','reasoning','image']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
