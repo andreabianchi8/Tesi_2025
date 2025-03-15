@@ -80,7 +80,7 @@ def ExtractDataExcel(file_path):
     return df
 
 
-def run_Benchmark(dataset,benchmark,startnum):
+def run_Benchmark(dataset,benchmark):
     """
     Esegue un benchmark su un dataset utilizzando un modello LLaVA e salva i risultati in un file csv.
     """
@@ -147,6 +147,8 @@ def run_Benchmark(dataset,benchmark,startnum):
     print(f"Benchmark completato. Risultati salvati in {output_file}.")
     return
 
-dataframe_testmini=pd.read_csv('algebra_testmini.csv')
+# Caricare il dataset JSON LogicVista
+with open("Datasets/LogicVista_dataset.json", "r", encoding="utf-8") as file:
+    dataset = json.load(file)
 
-run_Benchmark(dataframe_testmini,'algebra_testmini_LLava', 0)
+run_Benchmark(dataset,'LogicVista_Janus')

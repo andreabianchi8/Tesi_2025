@@ -174,7 +174,7 @@ def run_Benchmark(dataset,benchmark):
     return
 
 
-# Caricare il dataset JSON
+# Caricare il dataset JSON LogicVista
 with open("Datasets/LogicVista_dataset.json", "r", encoding="utf-8") as file:
     dataset = json.load(file)
 
