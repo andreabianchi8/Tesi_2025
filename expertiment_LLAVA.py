@@ -85,8 +85,11 @@ def generate_response(input_text,image_url):
 
     output = model.generate(**inputs, max_new_tokens=2000, do_sample=False)
 
+    print("Output: \n")    
     print(processor.decode(output[0][2:], skip_special_tokens=True))
-    print("Conversation: \n {conversation}")
+    print('Conversation: \n')
+    print(conversation)
+
     return output, conversation
 
 def ExtractDataExcel(file_path):
