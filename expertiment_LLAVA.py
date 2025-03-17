@@ -99,7 +99,7 @@ def generate_response(input_text,image_url):
     print('Conversation: \n')
     print(output)
 
-    return output, conversation
+    return assistant_response, output
 
 def ExtractDataExcel(file_path):
     """
