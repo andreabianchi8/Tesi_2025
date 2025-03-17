@@ -1,4 +1,4 @@
-from transformers import pipeline
+from transformers import pipeline,AutoProcessor, LlavaForConditionalGeneration
 from datasets import load_dataset
 import requests
 from PIL import Image
@@ -8,7 +8,13 @@ import pandas as pd
 import re
 import json
 import csv
+import torch
+import os
 
+os.environ["TORCH_USE_NNPACK"] = "0" #Usa la GPU 0
+
+# Disabilita MKLDNN
+torch.backends.mkldnn.enabled = False
 
 def prompt_optimization(sample_prompt, input_text):
     """
@@ -45,26 +51,43 @@ You should ONLY return the reformulated prompt. Make sure to include ALL informa
     optimized_prompt = f"{optimization_prompt}\n\nPrompt to optimize:\n{sample_prompt}\n\nInput for question:\n\"\"\"\n{input_text}\n\"\"\""
     return optimized_prompt
 
-def generate_response(pipe,input_text,image_url):
+def generate_response(input_text,image_url):
     """
     Genera una risposta utilizzando un modello LLaVA 
     """
-    messages = [
+
+    model_id = "llava-hf/llava-1.5-7b-hf"
+
+    model = LlavaForConditionalGeneration.from_pretrained(
+    model_id, 
+    torch_dtype=torch.float16, 
+    low_cpu_mem_usage=True, 
+    ).to(0)
+
+    processor = AutoProcessor.from_pretrained(model_id)
+    
+    conversation = [
     {
+
       "role": "user",
       "content": [
-          {"type": "image", "url": image_url},
           {"type": "text", "text": input_text},
+          {"type": "image"},
         ],
     },
-  ]
+]
     
-    # Chiamata al modello
-    response = pipe(text=messages,max_new_tokens=2000,do_sample=False)
+    prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
 
-    # Estrai il testo generato
-    generated_response = response[0]["generated_text"]
-    return generated_response, messages
+    raw_image = Image.open(requests.get(image_url, stream=True).raw)
+
+    inputs = processor(images=raw_image, text=prompt, return_tensors='pt').to(0, torch.float16)
+
+    output = model.generate(**inputs, max_new_tokens=2000, do_sample=False)
+
+    print(processor.decode(output[0][2:], skip_special_tokens=True))
+    print("Conversation: \n {conversation}")
+    return output, conversation
 
 def ExtractDataExcel(file_path):
     """
@@ -109,13 +132,13 @@ def run_Benchmark(dataset,benchmark):
         
         
             # Ottimizzazione del prompt
-            optimized_prompt = prompt_optimization(pipe,original_prompt, input_text)
-            optimized_prompt_ExP_CoT=prompt_optimization_ExP_CoT(pipe,original_prompt,input_text)
+            optimized_prompt = prompt_optimization(original_prompt, input_text)
+            optimized_prompt_ExP_CoT=prompt_optimization_ExP_CoT(original_prompt,input_text)
 
             # Generare risposte per il prompt originale e quello ottimizzato
-            answer_original, messages_original = generate_response(pipe,original_prompt+input_text,image_url)
-            answer_optimized, messages_optimized = generate_response(pipe,optimized_prompt,image_url)
-            answer_optimized_Exp_CoT,messages_optimized_Exp_CoT= generate_response(pipe,optimized_prompt_ExP_CoT,image_url)
+            answer_original, messages_original = generate_response(original_prompt+input_text,image_url)
+            answer_optimized, messages_optimized = generate_response(optimized_prompt,image_url)
+            answer_optimized_Exp_CoT,messages_optimized_Exp_CoT= generate_response(optimized_prompt_ExP_CoT,image_url)
 
             # Accumulare i risultati in un dizionario
             result = {
