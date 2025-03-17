@@ -97,7 +97,7 @@ def generate_response(input_text,image_url):
     print("Output Assistant response: \n")    
     print(assistant_response)
     print('Conversation: \n')
-    print(output)
+    print(processor.decode(output[0][2:], skip_special_tokens=True))
 
     return assistant_response, output
 
