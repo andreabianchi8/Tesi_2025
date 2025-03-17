@@ -109,13 +109,13 @@ def run_Benchmark(dataset,benchmark):
         
         
             # Ottimizzazione del prompt
-            optimized_prompt = prompt_optimization(original_prompt, input_text)
-            optimized_prompt_ExP_CoT=prompt_optimization_ExP_CoT(original_prompt,input_text)
+            optimized_prompt = prompt_optimization(pipe,original_prompt, input_text)
+            optimized_prompt_ExP_CoT=prompt_optimization_ExP_CoT(pipe,original_prompt,input_text)
 
             # Generare risposte per il prompt originale e quello ottimizzato
-            answer_original, messages_original = generate_response(original_prompt+input_text,image_url)
-            answer_optimized, messages_optimized = generate_response(optimized_prompt,image_url)
-            answer_optimized_Exp_CoT,messages_optimized_Exp_CoT= generate_response(optimized_prompt_ExP_CoT,image_url)
+            answer_original, messages_original = generate_response(pipe,original_prompt+input_text,image_url)
+            answer_optimized, messages_optimized = generate_response(pipe,optimized_prompt,image_url)
+            answer_optimized_Exp_CoT,messages_optimized_Exp_CoT= generate_response(pipe,optimized_prompt_ExP_CoT,image_url)
 
             # Accumulare i risultati in un dizionario
             result = {
