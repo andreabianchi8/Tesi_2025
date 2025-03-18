@@ -15,6 +15,12 @@ import csv
 import io
 import base64
 
+import os
+os.environ["TORCH_USE_NNPACK"] = "0"
+
+# Disabilita MKLDNN
+torch.backends.mkldnn.enabled = False
+
 
 def prompt_optimization(sample_prompt, input_text):
     """
@@ -61,7 +67,7 @@ def generate_response(input_text,image):
     tokenizer = vl_chat_processor.tokenizer
 
     # Carica il modello multimodale
-    vl_gpt = MultiModalityCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    vl_gpt = MultiModalityCausalLM.from_pretrained(model_path, trust_remote_code=True,device_map="auto",torch_dtype=torch.bfloat16,low_cpu_mem_usage=True,offload_folder="/scratch.hpc/andreabianchi/offload")
     vl_gpt = vl_gpt.to(torch.bfloat16).cpu().eval()
 
 
