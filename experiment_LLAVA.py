@@ -186,4 +186,4 @@ def run_Benchmark(dataset,benchmark):
 with open("Datasets/LogicVista_dataset.json", "r", encoding="utf-8") as file:
     dataset = json.load(file)
 
-run_Benchmark(dataset,'LogicVista_Janus')
+run_Benchmark(dataset,'LogicVista_Llava')
