@@ -85,12 +85,21 @@ def generate_response(input_text,image_url):
 
     output = model.generate(**inputs, max_new_tokens=2000, do_sample=False)
 
-    print("Output: \n")    
-    print(processor.decode(output[0][2:], skip_special_tokens=True))
-    print('Conversation: \n')
-    print(conversation)
+    response_text = processor.decode(output[0][2:], skip_special_tokens=True)
 
-    return output, conversation
+    # Cerca il testo dopo "ASSISTANT:"
+    match = re.search(r"ASSISTANT:\s*(.*)", response_text, re.DOTALL)
+
+    # Se trova una corrispondenza, estrae il testo
+    assistant_response = match.group(1).strip() if match else response_text
+
+
+    print("Output Assistant response: \n")    
+    print(assistant_response)
+    print('Conversation: \n')
+    print(processor.decode(output[0][2:], skip_special_tokens=True))
+
+    return assistant_response, output
 
 def ExtractDataExcel(file_path):
     """
