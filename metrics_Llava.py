@@ -11,8 +11,11 @@ import pickle
 import json
 from sentence_transformers import SentenceTransformer, util
 from transformers import pipeline
-
+from dotenv import load_dotenv
 import os
+
+load_dotenv() #carica le variabili dal file .env
+
 ACCESS_TOKEN = os.getenv("HF_ACCESS_TOKEN")  # Usa una variabile d'ambiente
 
 
