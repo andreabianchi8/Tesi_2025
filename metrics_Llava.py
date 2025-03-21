@@ -1,21 +1,31 @@
 import pandas as pd
 import asyncio
 import re
-import ast
 from ragas import SingleTurnSample
 from ragas.metrics import BleuScore
 from ragas.metrics import RougeScore
 from ragas.metrics._factual_correctness import FactualCorrectness
 from ragas.metrics import SemanticSimilarity
 from ragas.embeddings import LangchainEmbeddingsWrapper
-from langchain.llms import LlamaCpp
-from sentence_transformers import SentenceTransformer
 import pickle
+import json
+from sentence_transformers import SentenceTransformer, util
+from transformers import pipeline
 
-dataset_evaluation=pd.read_csv("evaluation_results_algebra_testmini_LLava.csv")
-dataset_reference=pd.read_csv("algebra_testmini.csv")
+import os
+ACCESS_TOKEN = os.getenv("HF_ACCESS_TOKEN")  # Usa una variabile d'ambiente
 
-# Dizionario per salvare i risultati
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Carica il dataset dell'evaluation results Llava
+dataset_evaluation=pd.read_csv("evaluation_results_LogicVista_Llava.csv")
+
+# Caricare il dataset JSON LogicVista
+with open("Datasets/LogicVista_dataset.json", "r", encoding="utf-8") as file:
+    dataset_reference = json.load(file)
+
+# Dizionario per salvare i risultati delle risposte: originali,ottimizzate Exp Cot, ottimizzate Exp Cot ToT
 results = {
     'answer_optimized_Exp_CoT': [],
     'answer_original': [],
@@ -28,59 +38,111 @@ bleu_score_answer_optimized=[]
 
 for index, row in dataset_evaluation.iterrows():
     for column in results.keys():
+        
         answer_text = row[column]
 
-        # Converti la stringa in una struttura dati Python (lista di dizionari)
-        try:
-            parsed_data = ast.literal_eval(answer_text)
-            
-            # Cerca il contenuto associato a 'role': 'assistant'
-            for entry in parsed_data:
-                if entry.get('role') == 'assistant':
-                    results[column].append(entry.get('content', ''))
-        except (ValueError, SyntaxError):
-            results[column].append("Errore nel parsing dei dati")
+        results[column].append(answer_text)
+
 
 # Ora i risultati sono in liste separate
 results_answer_Exp_CoT = results['answer_optimized_Exp_CoT']
 results_answer_original = results['answer_original']
 results_answer_optimized = results['answer_optimized']
 
-#################################################### Factual Correctness
-# Percorso al modello GGUF
-model_path = "models/mistral-7b-instruct-v0.2.Q5_K_S.gguf"
+################################################### Verifica se contiene l'answer [0 No, 1 Sì] [Correttezza]
 
-# Carica il modello locale
-# evaluator_llm = LlamaCpp(
-#     model_path=model_path,
-#     temperature=0,  # Risposte più deterministiche
-#     max_tokens=512,
-#     n_ctx=2048,  # Aumenta se il modello lo supporta
-#     verbose=True
-# )
+# Carica il modello Llama 3 (8B) da Hugging Face
+llm = pipeline("text-generation", 
+               model="mistralai/Mixtral-8x7B-Instruct-v0.1", 
+               token=ACCESS_TOKEN)
 
-async def factual_correctness(result_answer,evaluator_llm):
-    scores=[]
-    for index, row in dataset_reference.iterrows():
-        
-        if(index==18):
-            break
-    # Crea un sample
-    sample = SingleTurnSample(
-    response=result_answer[index], 
-    reference=row['solution']
-    )
+def preprocess_text(text):
+    """Rende il testo più uniforme rimuovendo punteggiatura e normalizzando gli spazi."""
+    text = text.lower().strip()
+    # text = re.sub(r'[^a-z0-9 ]', '', text)  # Rimuove caratteri speciali
+    return text
 
-    # Valuta con RAGAS
-    scorer = FactualCorrectness(llm=evaluator_llm)
-    score = await scorer.single_turn_score(sample)
-    print("Factual Correctness Score:", score)
+def check_ground_truth_in_response(ground_truth, model_response,type,threshold=90):
+    """Verifica se la risposta ha lo stesso significato della ground truth."""
+    
+    ground_truth=preprocess_text(ground_truth)
+    model_response=preprocess_text(model_response
+                                   )
+    print(f"GT({type}): {ground_truth} ")
+    print(f"Model Response({type}): {model_response}")
+    print("\n")
+
+    prompt = f"""
+    Analizza il seguente testo per determinare se il modello ha fornito la risposta corretta. 
+    Non limitarti a cercare la lettera corretta nella risposta, ma verifica se il significato della risposta 
+    implica chiaramente l'opzione corretta.
+
+    Risposta generata: "{model_response}"
+    Opzione corretta: "{ground_truth}"
+
+    Restituisci solo "1" se la risposta implica chiaramente l'opzione corretta, 
+    oppure "0" se non la implica. Non fornire altre spiegazioni.
+    """
+    result = llm(prompt, max_new_tokens=10)[0]["generated_text"]
+
+    print("Result: ",result)  # Deve restituire "1" o "0"
+    return 1 if "1" in result else 0
+    
+
+results_correctness_expt_cot=[]
+results_correctness_answer_original=[]
+results_correctness_answer_optimized=[]
+index=0
+
+for key, value in dataset_reference.items(): 
+        if "inductive" in value['skill'] or "numerical" in value['skill']:
+            results_correctness_expt_cot.append(check_ground_truth_in_response(value['answer'],results_answer_Exp_CoT[index],'Exp_Cot'))
+            results_correctness_answer_original.append(check_ground_truth_in_response(value['answer'],results_answer_original[index],'original'))
+            results_correctness_answer_optimized.append(check_ground_truth_in_response(value['answer'],results_answer_optimized[index],'optimized'))
+            index=index+1
 
 
-#asyncio.run(factual_correctness(results_answer_Exp_CoT,evaluator_llm))
-#asyncio.run(factual_correctness(results_answer_original,evaluator_llm))
-#asyncio.run(factual_correctness(results_answer_optimized,evaluator_llm))
 
+print("Correttezza risposte ottimizzate con Expert Prompting e Chain of Thought:",len(results_correctness_expt_cot))
+print(results_correctness_expt_cot)
+print("Correttezza risposte originali senza ottimizzazione:",len(results_correctness_answer_original))
+print(results_correctness_answer_original)
+print("Correttezza risposte ottimizzate (Expert Prompting,ToT,CoT):",len(results_correctness_answer_optimized))
+print(results_correctness_answer_optimized)
+
+# Salva le liste in un file pickle
+with open("pickle_data/results_correctness_expt_cot_llava.pkl", "wb") as f:
+    pickle.dump(results_correctness_expt_cot, f)
+
+with open("pickle_data/results_correctness_answer_original_llava.pkl", "wb") as f:
+    pickle.dump(results_correctness_answer_original, f)
+
+with open("pickle_data/results_correctness_answer_optimized_llava.pkl", "wb") as f:
+    pickle.dump(results_correctness_answer_optimized, f)
+
+##################################################### Accuracy in % (numero di 1 / totale degli elementi) x 100 
+
+print("Accuracy '%' risposte ottimizzate con Expert Prompting e Chain of Thought:")
+accuracy_expt_cot=(sum(results_correctness_expt_cot) / len (results_correctness_expt_cot)) * 100
+print(accuracy_expt_cot)
+
+print("Accuracy '%' risposte originali senza ottimizzazione:")
+accuracy_answer_original=(sum(results_correctness_answer_original) / len (results_correctness_answer_original)) * 100
+print(accuracy_answer_original)
+
+print("Accuracy '%' risposte ottimizzate (Expert Prompting,ToT,CoT):")
+accuracy_answer_optimized=(sum(results_correctness_answer_optimized) / len (results_correctness_answer_optimized)) * 100
+print(accuracy_answer_optimized)
+
+# Salva le liste in un file pickle
+with open("pickle_data/accuracy_expt_cot_llava.pkl", "wb") as f:
+    pickle.dump(accuracy_expt_cot, f)
+
+with open("pickle_data/accuracy_answer_original_llava.pkl", "wb") as f:
+    pickle.dump(accuracy_answer_original, f)
+
+with open("pickle_data/accuracy_answer_optimized_llava.pkl", "wb") as f:
+    pickle.dump(accuracy_answer_optimized, f)
 
 ##################################################### Semantic similarity
 
@@ -98,17 +160,18 @@ class AsyncSentenceTransformer:
 # Funzione per calcolare la similarità semantica
 async def semantic_similarity(result_answer, evaluator_embedding):
     scores = []
-    for index, row in dataset_reference.iterrows():
-        if index == 18:
-            break
+    index=0
 
-        sample = SingleTurnSample(
-            response=result_answer[index], 
-            reference=row['solution']
-        )
-        scorer = SemanticSimilarity(embeddings=LangchainEmbeddingsWrapper(evaluator_embedding))
-        score = await scorer.single_turn_ascore(sample)
-        scores.append(score)
+    for key, value in dataset_reference.items():
+        if "inductive" in value['skill'] or "numerical" in value['skill']:
+            sample = SingleTurnSample(
+            response=preprocess_text(result_answer[index]), 
+            reference=preprocess_text(value['reasoning'])
+            )
+            scorer = SemanticSimilarity(embeddings=LangchainEmbeddingsWrapper(evaluator_embedding))
+            score = await scorer.single_turn_ascore(sample)
+            scores.append(score)
+            index=index+1
         #print(f"Semantic similarity score: {score}")
 
     return scores
@@ -143,22 +206,22 @@ with open("pickle_data/results_semantic_sim_answer_optimized_llava.pkl", "wb") a
 async def calculate_bleu(result_answer):
     # Esempio di dati: una risposta del modello e una risposta di riferimento
     scores=[]
-    for index, row in dataset_reference.iterrows():
-        
-        if(index==18):
-            break
+    index=0
 
-        sample = SingleTurnSample(
-        response=result_answer[index], 
-        reference=row['solution']
-        )
+    for key, value in dataset_reference.items():
+        if "inductive" in value['skill'] or "numerical" in value['skill']:
+            sample = SingleTurnSample(
+            response=preprocess_text(result_answer[index]), 
+            reference=preprocess_text(value['reasoning'])
+            )
         
-        # Creazione dell'oggetto BleuScore
-        scorer = BleuScore()
+            # Creazione dell'oggetto BleuScore
+            scorer = BleuScore()
 
-        # Calcolo del BLEU score per il turno singolo (deve essere await)
-        score = await scorer.single_turn_ascore(sample)
-        scores.append(score)
+            # Calcolo del BLEU score per il turno singolo (deve essere await)
+            score = await scorer.single_turn_ascore(sample)
+            scores.append(score)
+            index=index+1
 
         #Visualizzare il risultato
         #print(f"BLEU Score: {score}")
@@ -190,23 +253,22 @@ print(results_bleu_answer_optimized)
 async def calculate_rouge(result_answer):
     # Esempio di dati: una risposta del modello e una risposta di riferimento
     scores=[]
-    for index, row in dataset_reference.iterrows():
+    index=0
+
+    for key, value in dataset_reference.items():
+        if "inductive" in value['skill'] or "numerical" in value['skill']:
+            sample = SingleTurnSample(
+            response=preprocess_text(result_answer[index]), 
+            reference=preprocess_text(value['reasoning'])
+            )
         
-        if(index==18):
-            break
+            # Creazione dell'oggetto RougeScore
+            scorer = RougeScore()
 
-        sample = SingleTurnSample(
-        response=result_answer[index], 
-        reference=row['solution']
-        )
-        
-        # Creazione dell'oggetto RougeScore
-        scorer = RougeScore()
-
-        # Calcolo del Rouge score per il turno singolo (deve essere await)
-        score = await scorer.single_turn_ascore(sample)
-        scores.append(score)
-
+            # Calcolo del Rouge score per il turno singolo (deve essere await)
+            score = await scorer.single_turn_ascore(sample)
+            scores.append(score)
+            index=index+1
 
     return scores
 
